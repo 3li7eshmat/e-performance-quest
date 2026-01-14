@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { getCurrentUser, logout } from '../services/auth';
 import { getAgents, calculatePowerScore } from '../services/data';
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Timer, ThumbsUp, CheckCircle } from 'lucide-react';
+import { Trophy, Timer, ThumbsUp, CheckCircle, Bell } from 'lucide-react';
 import '../styles/Dashboard.css';
 
 const Dashboard = () => {
     const [user, setUser] = useState(null);
     const [agents, setAgents] = useState([]);
+    const [activeTab, setActiveTab] = useState('powerScore');
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -18,19 +19,18 @@ const Dashboard = () => {
         }
         setUser(currentUser);
 
-        // Load Leaderboard Data
+        // Load Agents
         const allAgents = getAgents();
         const agentsWithScore = allAgents.map(a => ({
             ...a,
             powerScore: calculatePowerScore(a.stats)
-        })).sort((a, b) => b.powerScore - a.powerScore);
-
+        }));
         setAgents(agentsWithScore);
     }, [navigate]);
 
     if (!user) return null;
 
-    // Get current user stats from the fresh data
+    // Get current user stats
     const myData = agents.find(a => a.id === user.id) || user;
     const stats = myData.stats;
 
@@ -40,24 +40,51 @@ const Dashboard = () => {
         const numTarget = parseFloat(target);
 
         if (isLowerBetter) {
-             // For AHT: Lower is better
-             if (numValue <= numTarget) return 'var(--success)'; // High performance
-             if (numValue <= numTarget * 1.1) return 'var(--warning)'; // Medium (within 10%)
-             return 'var(--error)'; // Low performance
+            if (numValue <= numTarget) return 'var(--success)';
+            if (numValue <= numTarget * 1.1) return 'var(--warning)';
+            return 'var(--error)';
         } else {
-            // For Scores: Higher is better
             if (numValue >= numTarget) return 'var(--success)';
             if (numValue >= numTarget * 0.9) return 'var(--warning)';
             return 'var(--error)';
         }
     };
 
+    // Sorting Logic
+    const getSortedAgents = () => {
+        return [...agents].sort((a, b) => {
+            if (activeTab === 'aht') {
+                return a.stats.aht - b.stats.aht; // Ascending for AHT
+            } else if (activeTab === 'csat') {
+                return b.stats.csat - a.stats.csat;
+            } else if (activeTab === 'fcr') {
+                return b.stats.fcr - a.stats.fcr;
+            } else {
+                return b.powerScore - a.powerScore;
+            }
+        });
+    };
+
+    const sortedAgents = getSortedAgents();
+
+    // Column Header & Value Accessor
+    const getMetricDetails = () => {
+        switch (activeTab) {
+            case 'csat': return { label: 'CSAT %', getValue: (agent) => `${agent.stats.csat}%` };
+            case 'fcr': return { label: 'FCR %', getValue: (agent) => `${agent.stats.fcr}%` };
+            case 'aht': return { label: 'AHT (s)', getValue: (agent) => `${agent.stats.aht}s` };
+            default: return { label: 'Power Score', getValue: (agent) => agent.powerScore };
+        }
+    };
+
+    const metricDetails = getMetricDetails();
+
     return (
         <div className="dashboard-container">
-            {/* Hero Section */}
+            {/* Team Header */}
             <header className="dashboard-header">
                 <div className="header-content">
-                    <h1>Welcome, {user.name}</h1>
+                    <h1>Team Money Hackers</h1>
                     <p>Performance Dashboard</p>
                 </div>
                 <div className="header-actions">
@@ -66,6 +93,12 @@ const Dashboard = () => {
                     </button>
                 </div>
             </header>
+
+            {/* Welcome Alert */}
+            <div className="welcome-alert">
+                <Bell size={20} />
+                <span>Welcome back, <strong>{user.name}</strong>! Ready to crush your goals today?</span>
+            </div>
 
             {/* KPI Grid */}
             <div className="kpi-grid">
@@ -96,8 +129,36 @@ const Dashboard = () => {
                 {/* The Arena (Leaderboard) */}
                 <div className="arena-container">
                     <div className="arena-header">
-                        <Trophy size={24} color="var(--warning)" />
-                        <h2>The Arena</h2>
+                        <div className="arena-title">
+                            <Trophy size={24} color="var(--warning)" />
+                            <h2>The Arena</h2>
+                        </div>
+                        <div className="leaderboard-tabs">
+                            <button
+                                className={`tab-btn ${activeTab === 'powerScore' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('powerScore')}
+                            >
+                                Overall
+                            </button>
+                            <button
+                                className={`tab-btn ${activeTab === 'csat' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('csat')}
+                            >
+                                CSAT
+                            </button>
+                            <button
+                                className={`tab-btn ${activeTab === 'fcr' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('fcr')}
+                            >
+                                FCR
+                            </button>
+                            <button
+                                className={`tab-btn ${activeTab === 'aht' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('aht')}
+                            >
+                                AHT
+                            </button>
+                        </div>
                     </div>
 
                     <table className="arena-table">
@@ -105,11 +166,11 @@ const Dashboard = () => {
                             <tr>
                                 <th>Rank</th>
                                 <th>Agent</th>
-                                <th style={{ textAlign: 'right' }}>Power Score</th>
+                                <th style={{ textAlign: 'right' }}>{metricDetails.label}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {agents.map((agent, index) => (
+                            {sortedAgents.map((agent, index) => (
                                 <tr key={agent.id} className={`arena-row ${agent.id === user.id ? 'current-user-row' : ''}`}>
                                     <td>
                                         {index < 3 ? <span style={{ fontSize: '1.2rem' }}>{['🥇', '🥈', '🥉'][index]}</span> : `#${index + 1}`}
@@ -121,7 +182,7 @@ const Dashboard = () => {
                                         {agent.name}
                                     </td>
                                     <td className="score-cell">
-                                        {agent.powerScore}
+                                        {metricDetails.getValue(agent)}
                                     </td>
                                 </tr>
                             ))}
